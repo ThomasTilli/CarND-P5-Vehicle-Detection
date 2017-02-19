@@ -206,7 +206,7 @@ Train Accuracy of MLPC =  1.0
 Test Accuracy of MLPC =  0.991835585586
 Wall time: 98.1 ms
 
-The results are much better than with a SVC classifier and the processing time are very similar. The size of the hidden layers where optimized by some trial and error.
+The results are much better than with a SVC classifier and the processing time are very similar. The size of the hidden layers where optimized by some trial and error. I used this classifier in my detection pipeline instead of a SVC classifier.
 
 
 ### Sliding Window Search implementation
