@@ -112,13 +112,12 @@ I experimented with different parameter sets. One important point  is that extra
 I implemented a function which extracts the combined features for an image where all the parameters are set:
 
 ```
-# Obtains a feature vector using preselected set of parameters
 def single_img_features(image):
     # Standartize images to be uint8 data type
     if isinstance(image[0][0][0], np.float32):
         image = np.uint8(image * 255)
 
-    color_space = 'YUV'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+    color_space = 'YCrCb'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
 
     # after a lot of experiments these parameter settings perform quite well
     spatial_size = (32, 32)  # Spatial binning dimensions
@@ -127,10 +126,11 @@ def single_img_features(image):
     hist_bins = 64  # Number of histogram bins
     hist_feat = True  # Histogram features on or off
 
-    orient = 8  # HOG orientations
+    orient = 9  # HOG orientations
     pix_per_cell = 8  # HOG pixels per cell
     cell_per_block = 2  # HOG cells per block
-    hog_channel = 1 #"ALL"  # Can be 0, 1, 2, or "ALL"
+    hog_channel =0 # #"ALL"  # Can be 0, 1, 2, or "ALL"
+
     hog_feat = True  # HOG features on or off
 
     return extract_features(image, color_space=color_space,
@@ -142,7 +142,7 @@ def single_img_features(image):
 
 ```
 
-This parameter settings performs quite well. Most important to note is that YUV colorspace is used and color channel 1 is used for the Hog feature extraction.
+This parameter settings performs quite well. Most important to note is that YCrCb colorspace is used and color channel 0 is used for the Hog feature extraction.
 
 ## Training the classifier
 
@@ -184,8 +184,8 @@ print('Train Accuracy of SVC = ', svc.score(X_train, y_train))
 
 The results are:
 Train Accuracy of SVC =  1.0
-Test Accuracy of SVC =  0.977477477477
-Wall time: 81.6 ms
+Test Accuracy of SVC =  0.988175675676
+Wall time: 90.6 ms
 
 ### Training a MLPC classifier
 
@@ -203,10 +203,11 @@ print('Train Accuracy of MLPC = ', mlpc.score(X_train, y_train))
 ```
 
 Train Accuracy of MLPC =  1.0
-Test Accuracy of MLPC =  0.991835585586
-Wall time: 98.1 ms
+Test Accuracy of MLPC =  0.994369369369
+Wall time: 106 ms
 
-The results are much better than with a SVC classifier and the processing time are very similar. The size of the hidden layers where optimized by some trial and error. I used this classifier in my detection pipeline instead of a SVC classifier.
+The results are much better than with a SVC classifier and the processing time are very similar. The size of the hidden layers where optimized by some trial and error.
+I used this classifier in my detection pipeline instead of a SVC classifier.
 
 
 ### Sliding Window Search implementation
@@ -274,8 +275,8 @@ def slide_window(img, x_start_stop=[None, None], y_start_stop=[None, None],
             test_features = scaler.transform(np.array(features).reshape(1, -1))
             #6) Predict using your classifier
             prediction = clf.predict(test_features)
-            #7) If positive (prediction == 1) then save the window
-            if prediction ==1:
+            prob=clf.predict_proba(test_features)
+            if prob[0][1]>0.55:
                 on_windows.append(window)
         #8) Return windows for positive detections
         return on_windows
@@ -291,7 +292,8 @@ I implement then a function to detect  all hot windows in an image:
 def find_hot_windows(image):
     windows_all=[]   
     #after a lot of trials this works quite well and very fast
-    img_sizes=[96,108,120,132]
+    img_sizes=[90,100,116,140,164]
+    y_stops=[500,500,540,580,580]
 
     for i in range(0,len( img_sizes)):
         size=img_sizes[i]
@@ -306,7 +308,7 @@ def find_hot_windows(image):
 The parameters img_sizes. y_start_stop where found doing much experimentation. My goal was to detect all cars which are not too far away and to realize a fast detection pipeline.  Therefore the image sizes are quite large and the y range is quite restricted. The following image shows the result for some of the test images:
 
 ![alt text][image2]
-There are some false positives but the cars are well detected with the exception of the car in the third image which is too far away.
+There are some false positives but the cars are well detected.
 
 
 ## False Positive Removal
@@ -367,26 +369,29 @@ def find_cars_in_image(img,threshold=0.9, prev_hot_windows=None):
     hot_windows=find_hot_windows(img)
     heat = np.zeros_like(img[:,:,0]).astype(np.float)    
     heatmap = add_heat(heat, hot_windows)
- #   heatmap = np.sqrt(heatmap)
+
 
     # Heat threshold to filter false positives
     heat_threshold = threshold
-    look_back_count = 10
+    look_back_count = 5
       # If we a processing a video, we might have hot windows information from previous frames
+
     if prev_hot_windows is not None:
 
-        for frame_hot_windows in prev_hot_windows:
-            for window in frame_hot_windows:
-                heatmap[window[0][1]:window[1][1], window[0][0]:window[1][0]] += 1
+        for cur_hot_windows in prev_hot_windows:
+            current_heatmap=np.zeros_like(img[:,:,0]).astype(np.float)   
+            add_heat(current_heatmap, cur_hot_windows)
+            heatmap += current_heatmap
         if len(prev_hot_windows) > look_back_count:
             prev_hot_windows.popleft()
+
     heatmap_thresholded = apply_threshold(heatmap, heat_threshold)    
     labels = label(heatmap_thresholded)
     window_img = draw_labeled_bboxes(img, labels)
     return window_img, prev_hot_windows
 ```
 
-First the how windows are detected. Then with a heat map of the last 10 images the false positives are removed. The following image shows the results for some of the test images (here are no previous slides):
+First the how windows are detected. Then with a heat map of the last 5 images the false positives are removed. The following image shows the results for some of the test images (here are no previous slides):
 ![alt text][image4]
 
 The final function for video processing is:
@@ -405,4 +410,12 @@ def process_frame(image):
 ```
 The  resulting project videos generated by described pipeline can be found in this repository, for the project_video the result is project_video_solution.mp4
 
-There are no false positives only cars on the other lane are detected sometimes. The overall pipeline is quite fast, on my laptop with I7 core I achieved about 2.5 frames per second. That is not real time, but there are no special code optimizations for Hog feature extraction.
+
+There are no false positives only cars on the other lane are detected sometimes. The overall pipeline is quite fast, on my laptop with I7 core I achieved about 3.5 frames per second. That is not real time, but there are no special code optimizations for Hog feature extraction.
+
+###Discussion
+
+
+The optimization of several parameters - feature extraction and very important windows sizes are very critical to achieve sucess. The boundary between false negatives and false positives is very small and that indicates that this hand tuned classical image processing appproach is not very robust.  Another issues is, that the processing pipeline is not fast enough, but hog feature extraction can be made much faster, if it is applied to the lower half of an image at once. Further performance improvement can be achieved by using a GPU for the image processing routines.
+
+As in other image processing areas, things could be much improved and made more robust by using deep neural nets. One option is using a VGG like network which has an regression head for the localization of objects and and classification head for object classification (car, truck, bike, bicyle, predistrian, child..) . Another approach would be using an UNetto do image segmentation to localize objects.  I currently are experimenting with an UNet for car detection, but at the moment there a too much false positives but I m working on it. On a GTX 1080 GPU 10 to 15 frames per second can be processed. For the training of the UNet  I m using the Udacity annotated driving data set (https://github.com/udacity/self-driving-car/tree/master/annotations).  I will work on it again when I pass this submission and then I will add the code and result videos to this repo too.
